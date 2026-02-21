@@ -21,6 +21,8 @@ Define how the extension's modular feature menu and runtime message flow are str
 - OpenAI API calls using stored settings.
 - Download initiation.
 - Split-track coordination and merge-service invocation for YouTube fallback.
+- YouTube helper endpoint invocation for yt-dlp fallback when direct stream URLs are unavailable.
+- Generic manifest helper endpoint invocation for non-YouTube HLS/DASH fallback.
 
 - Options page (`options.html`, `scripts/options.js`):
 - Configuration for API key, model, and markdown guidance.
@@ -41,4 +43,4 @@ Define how the extension's modular feature menu and runtime message flow are str
 ## Limitations
 - Streaming/DRM media download support is partial and site-dependent.
 - X composer insertion uses legacy `execCommand` fallback and can break with UI updates.
-- Automatic split-track merge depends on external local helper availability and ffmpeg.
+- Automatic split-track merge and helper YouTube fallback depend on external local helper availability, ffmpeg, and yt-dlp.

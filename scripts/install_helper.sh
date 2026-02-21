@@ -2,6 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TOOLS_BIN_DIR="$ROOT_DIR/tools/bin"
+YTDLP_LOCAL="$TOOLS_BIN_DIR/yt-dlp"
 
 log() {
   printf '[install-helper] %s\n' "$*"
@@ -63,6 +65,28 @@ ensure_python() {
   export PYTHON_BIN
 }
 
+download_local_yt_dlp() {
+  mkdir -p "$TOOLS_BIN_DIR"
+
+  local url="https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp"
+  log "Downloading latest nightly yt-dlp to $YTDLP_LOCAL ..."
+
+  if need_cmd curl; then
+    curl -fsSL "$url" -o "$YTDLP_LOCAL"
+  elif need_cmd wget; then
+    wget -qO "$YTDLP_LOCAL" "$url"
+  else
+    log "curl or wget is required to download yt-dlp."
+    exit 1
+  fi
+
+  chmod +x "$YTDLP_LOCAL"
+  "$YTDLP_LOCAL" --version >/dev/null 2>&1 || {
+    log "Downloaded yt-dlp is not executable."
+    exit 1
+  }
+}
+
 main() {
   case "$(uname -s)" in
     Darwin)
@@ -90,6 +114,8 @@ main() {
     exit 1
   fi
 
+  download_local_yt_dlp
+
   log "Validating merge helper script..."
   "$PYTHON_BIN" -m py_compile "$ROOT_DIR/tools/merge_server.py"
 
@@ -99,7 +125,7 @@ Setup complete.
 
 Next steps:
 1. Start merge server:
-   $PYTHON_BIN "$ROOT_DIR/tools/merge_server.py" --host 127.0.0.1 --port 8765
+   "$ROOT_DIR/scripts/start_merge_helper.sh"
 2. In extension settings:
    - Enable 'Auto-merge separate YouTube audio/video tracks'
    - Set Merge Service URL to 'http://127.0.0.1:8765/merge'

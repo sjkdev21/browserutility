@@ -82,6 +82,96 @@ async function mergeTracksWithService(mergeServiceUrl, videoPath, audioPath, out
   return response.json();
 }
 
+function endpointFromMergeUrl(mergeServiceUrl, endpointPath) {
+  try {
+    const url = new URL(mergeServiceUrl || DEFAULT_MERGE_SERVICE_URL);
+    url.pathname = endpointPath;
+    url.search = "";
+    return url.toString();
+  } catch {
+    return `http://127.0.0.1:8765${endpointPath}`;
+  }
+}
+
+async function downloadYouTubeWithHelper(mergeServiceUrl, videoUrl, titleHint) {
+  const endpoint = endpointFromMergeUrl(mergeServiceUrl, "/download_youtube");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      video_url: videoUrl,
+      title_hint: titleHint || "youtube-video"
+    })
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    let helperError = details;
+    try {
+      const parsed = JSON.parse(details);
+      helperError = parsed?.error || details;
+    } catch {
+      helperError = details;
+    }
+    throw new Error(`YouTube helper failed (${response.status}): ${String(helperError).slice(0, 1200)}`);
+  }
+
+  return response.json();
+}
+
+async function downloadManifestWithHelper(mergeServiceUrl, manifestUrl, titleHint, pageUrl) {
+  const endpoint = endpointFromMergeUrl(mergeServiceUrl, "/download_manifest");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      manifest_url: manifestUrl,
+      title_hint: titleHint || "stream-video",
+      page_url: pageUrl || ""
+    })
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    let helperError = details;
+    try {
+      const parsed = JSON.parse(details);
+      helperError = parsed?.error || details;
+    } catch {
+      helperError = details;
+    }
+    throw new Error(`Manifest helper failed (${response.status}): ${String(helperError).slice(0, 1200)}`);
+  }
+
+  return response.json();
+}
+
+async function downloadPageWithHelper(mergeServiceUrl, pageUrl, titleHint) {
+  const endpoint = endpointFromMergeUrl(mergeServiceUrl, "/download_page");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      page_url: pageUrl,
+      title_hint: titleHint || "page-video"
+    })
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    let helperError = details;
+    try {
+      const parsed = JSON.parse(details);
+      helperError = parsed?.error || details;
+    } catch {
+      helperError = details;
+    }
+    throw new Error(`Page helper failed (${response.status}): ${String(helperError).slice(0, 1200)}`);
+  }
+
+  return response.json();
+}
+
 function buildPrompt(guidelinesMarkdown, sourceText) {
   const instructions = guidelinesMarkdown?.trim()
     ? guidelinesMarkdown.trim()
@@ -230,6 +320,58 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           downloaded: 2,
           merged: true,
           message: "Downloaded separate tracks and merged them into a single MP4."
+        });
+        return;
+      }
+
+      if (message?.action === "downloadYouTubeViaHelper") {
+        if (!message.videoUrl) {
+          throw new Error("Missing YouTube URL for helper download.");
+        }
+        const settings = await readSettings();
+        const helperResult = await downloadYouTubeWithHelper(
+          settings.mergeServiceUrl || DEFAULT_MERGE_SERVICE_URL,
+          message.videoUrl,
+          message.titleHint || "youtube-video"
+        );
+        sendResponse({
+          ok: true,
+          message: helperResult?.message || "Started helper-based YouTube download."
+        });
+        return;
+      }
+
+      if (message?.action === "downloadManifestViaHelper") {
+        if (!message.manifestUrl) {
+          throw new Error("Missing manifest URL for helper download.");
+        }
+        const settings = await readSettings();
+        const helperResult = await downloadManifestWithHelper(
+          settings.mergeServiceUrl || DEFAULT_MERGE_SERVICE_URL,
+          message.manifestUrl,
+          message.titleHint || "stream-video",
+          message.pageUrl || ""
+        );
+        sendResponse({
+          ok: true,
+          message: helperResult?.message || "Started helper-based manifest download."
+        });
+        return;
+      }
+
+      if (message?.action === "downloadPageViaHelper") {
+        if (!message.pageUrl) {
+          throw new Error("Missing page URL for helper download.");
+        }
+        const settings = await readSettings();
+        const helperResult = await downloadPageWithHelper(
+          settings.mergeServiceUrl || DEFAULT_MERGE_SERVICE_URL,
+          message.pageUrl,
+          message.titleHint || "page-video"
+        );
+        sendResponse({
+          ok: true,
+          message: helperResult?.message || "Started helper-based page download."
         });
         return;
       }

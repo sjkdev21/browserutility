@@ -18,7 +18,9 @@ This repository contains a Manifest V3 Chrome extension with a growing menu of p
 - Starts downloads for direct video files (`.mp4`, `.webm`, `.mov`, `.m4v`).
 - On YouTube watch pages, tries combined stream first.
 - If only split tracks are available, downloads video+audio tracks and can auto-merge them through a local ffmpeg helper service.
+- If direct stream URLs are unavailable, falls back to helper-side YouTube download via `yt-dlp`.
 - Detects streaming manifests (`.m3u8`, `.mpd`) and copies them to clipboard.
+- On non-YouTube pages with manifest-only streams, automatically tries helper-side manifest download via `yt-dlp`.
 
 ## Entry Points and Usage
 - Extension root: `extension/`
@@ -75,7 +77,7 @@ Load in Chrome:
 ```
 
 ### macOS
-1. Run installer (uses Homebrew for `ffmpeg`):
+1. Run installer (uses Homebrew for `ffmpeg` and downloads latest local `yt-dlp`):
 ```bash
 ./scripts/install_helper.sh
 ```
@@ -97,6 +99,20 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start_merge_helper.ps1
 ### Extension Settings
 1. Enable `Auto-merge separate YouTube audio/video tracks`.
 2. Set `Merge Service URL` to `http://127.0.0.1:8765/merge`.
+
+The helper service now supports:
+- `/merge` for combining separate downloaded tracks.
+- `/download_youtube` for robust YouTube fallback downloads using `yt-dlp`.
+- `/download_manifest` for generic HLS/DASH manifest downloads using `yt-dlp`.
+- `/download_page` for generic page-level video extraction using `yt-dlp` when manifests are hidden.
+
+The installer downloads a project-local `yt-dlp` binary under `tools/bin/` and startup scripts use that binary by default.
+The helper now logs request lifecycle events with timestamps (start, attempts, success/failure) to terminal/stdout.
+
+Troubleshooting:
+- If you see `nsig extraction failed`, update yt-dlp and restart helper:
+  - Linux/macOS: rerun `./scripts/install_helper.sh`
+  - Windows: rerun `powershell -ExecutionPolicy Bypass -File .\scripts\install_helper.ps1`
 
 ## Test Coverage
 - No automated tests yet in this initial scaffold.

@@ -38,7 +38,24 @@ async function runAction(action) {
     }
 
     if (response.draft) {
-      setStatus("Draft copied and inserted into composer when available.");
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(response.draft);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+      setStatus(copied ? "Draft copied to clipboard." : "Draft created, but clipboard copy failed.");
+      return;
+    }
+
+    if (response.manifestText) {
+      try {
+        await navigator.clipboard.writeText(response.manifestText);
+        setStatus(response.message ? `${response.message} Manifest URLs copied.` : "Manifest URLs copied.");
+      } catch {
+        setStatus(response.message || "Action completed, but manifest copy failed.", true);
+      }
       return;
     }
 

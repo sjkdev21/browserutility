@@ -152,12 +152,45 @@ function discoverVideoUrls() {
   const allLinks = Array.from(document.querySelectorAll("a[href]"));
   for (const link of allLinks) {
     const href = link.href;
-    if (/\.(mp4|webm|mov|m4v|m3u8|mpd)(\?|$)/i.test(href)) {
+    if (/\.(mp4|webm|mov|m4v|m3u8|mpd)(\?|$)/i.test(href) || /(m3u8|mpd)/i.test(href)) {
       urls.add(href);
     }
   }
 
+  // Some sites store manifest URLs in inline scripts instead of anchor/video tags.
+  const scriptTexts = Array.from(document.querySelectorAll("script"))
+    .map((script) => script.textContent || "")
+    .filter(Boolean);
+  const manifestRegex = /https?:\/\/[^"'\\\s]+?(?:m3u8|mpd)[^"'\\\s]*/gi;
+  for (const text of scriptTexts) {
+    const matches = text.match(manifestRegex) || [];
+    for (const raw of matches) {
+      const cleaned = raw.replace(/\\u0026/g, "&").replace(/\\\//g, "/");
+      urls.add(cleaned);
+    }
+  }
+
   return Array.from(urls);
+}
+
+function discoverManifestCandidates(urls) {
+  const candidates = new Set(
+    urls.filter((url) => /\.(m3u8|mpd)(\?|$)/i.test(url) || /(m3u8|mpd)/i.test(url))
+  );
+
+  try {
+    const resources = performance.getEntriesByType("resource");
+    for (const entry of resources) {
+      const name = entry?.name || "";
+      if (/(m3u8|mpd)/i.test(name)) {
+        candidates.add(name);
+      }
+    }
+  } catch {
+    // ignore performance API issues
+  }
+
+  return Array.from(candidates);
 }
 
 function isDownloadableDirectFile(url) {
@@ -318,19 +351,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const inserted = placeDraftIntoXComposer(generated.draft);
-        await navigator.clipboard.writeText(generated.draft);
 
         sendResponse({
           ok: true,
           draft: generated.draft,
-          message: inserted ? "Draft inserted into composer and copied." : "Draft copied to clipboard."
+          message: inserted ? "Draft inserted into composer." : "Draft generated."
         });
         return;
       }
 
       if (message?.action === "downloadPageVideo") {
         const discovered = discoverVideoUrls();
-        const manifestCandidates = discovered.filter((url) => /\.(m3u8|mpd)(\?|$)/i.test(url));
+        const manifestCandidates = discoverManifestCandidates(discovered);
 
         if (location.hostname.includes("youtube.com") && location.pathname.startsWith("/watch")) {
           const ytInfo = await discoverYouTubeStreamInfo();
@@ -343,8 +375,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({
               ok: true,
               downloaded: 1,
-              message: `Started 1 combined download.${manifestCandidates.length ? " Streaming manifests found and copied to clipboard." : ""}`,
-              manifestCandidates
+              message: `Started 1 combined download.${manifestCandidates.length ? " Streaming manifests found." : ""}`,
+              manifestCandidates,
+              manifestText: manifestCandidates.join("\n")
             });
           } else if (ytInfo?.videoOnlyUrl && ytInfo?.audioOnlyUrl) {
             const merged = await chrome.runtime.sendMessage({
@@ -360,19 +393,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
               ok: true,
               downloaded: merged.downloaded || 2,
               message: merged.message || "Downloaded split tracks and requested merge.",
-              manifestCandidates
+              manifestCandidates,
+              manifestText: manifestCandidates.join("\n")
             });
           } else {
+            const helperResult = await chrome.runtime.sendMessage({
+              action: "downloadYouTubeViaHelper",
+              videoUrl: location.href,
+              titleHint: document.title || "youtube-video"
+            });
+            if (!helperResult?.ok) {
+              throw new Error(
+                helperResult?.error ||
+                  "Could not find downloadable YouTube stream URLs on this page, and helper fallback failed."
+              );
+            }
             sendResponse({
               ok: true,
-              downloaded: 0,
-              message: "Could not find downloadable YouTube stream URLs on this page.",
-              manifestCandidates
+              downloaded: 1,
+              message: helperResult.message || "Started helper-based YouTube download.",
+              manifestCandidates,
+              manifestText: manifestCandidates.join("\n")
             });
-          }
-
-          if (manifestCandidates.length) {
-            navigator.clipboard.writeText(manifestCandidates.join("\n"));
           }
           return;
         }
@@ -389,19 +431,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
         }
 
+        const helperErrors = [];
+
+        if (downloaded === 0 && manifestCandidates.length) {
+          let manifestDownloaded = false;
+          for (const manifestUrl of manifestCandidates) {
+            const helperResult = await chrome.runtime.sendMessage({
+              action: "downloadManifestViaHelper",
+              manifestUrl,
+              titleHint: document.title || "stream-video",
+              pageUrl: location.href
+            });
+            if (helperResult?.ok) {
+              manifestDownloaded = true;
+              sendResponse({
+                ok: true,
+                downloaded: 1,
+                message:
+                  helperResult.message ||
+                  "Started helper-based stream download from manifest.",
+                manifestCandidates,
+                manifestText: manifestCandidates.join("\n")
+              });
+              return;
+            }
+            helperErrors.push(helperResult?.error || `Manifest helper failed for ${manifestUrl}`);
+          }
+
+          if (!manifestDownloaded && helperErrors.length === 0) {
+            helperErrors.push("Manifest helper did not return a successful response.");
+          }
+        }
+
+        if (downloaded === 0) {
+          const helperResult = await chrome.runtime.sendMessage({
+            action: "downloadPageViaHelper",
+            pageUrl: location.href,
+            titleHint: document.title || "page-video"
+          });
+          if (helperResult?.ok) {
+            sendResponse({
+              ok: true,
+              downloaded: 1,
+              message: helperResult.message || "Started helper-based page video download.",
+              manifestCandidates,
+              manifestText: manifestCandidates.join("\n")
+            });
+            return;
+          }
+          helperErrors.push(helperResult?.error || "Page helper fallback failed.");
+          throw new Error(
+            `No direct downloadable media found. Helper fallbacks failed: ${helperErrors.join(" | ")}`
+          );
+        }
+
         sendResponse({
           ok: true,
           downloaded,
           message:
             downloaded > 0
-              ? `Started ${downloaded} download(s).${manifestCandidates.length ? " Streaming manifests found and copied to clipboard." : ""}`
+              ? `Started ${downloaded} download(s).${manifestCandidates.length ? " Streaming manifests found." : ""}`
               : "Only streaming manifests found. See clipboard.",
-          manifestCandidates
+          manifestCandidates,
+          manifestText: manifestCandidates.join("\n")
         });
-
-        if (manifestCandidates.length) {
-          navigator.clipboard.writeText(manifestCandidates.join("\n"));
-        }
 
         return;
       }

@@ -27,6 +27,11 @@
   - `scripts/install_helper.ps1` (Windows)
   - `scripts/start_merge_helper.sh`
   - `scripts/start_merge_helper.ps1`
+- Added YouTube helper fallback path using local `yt-dlp` via `tools/merge_server.py` endpoint `/download_youtube`.
+- Hardened helper-side YouTube fallback with multi-strategy yt-dlp retries and clearer stale-yt-dlp error hinting.
+- Added non-YouTube manifest fallback path using local `yt-dlp` via `tools/merge_server.py` endpoint `/download_manifest`.
+- Added generic page fallback path using local `yt-dlp` via `tools/merge_server.py` endpoint `/download_page`.
+- Added timestamped helper runtime logging in `tools/merge_server.py` for request start/attempt/success/failure diagnostics.
 - Fixed X reply generation parsing to support multiple OpenAI Responses output formats (`output_text` and `output[].content[].text`).
 - Added foundational documentation (`README.md`).
 
@@ -46,4 +51,4 @@
 - DOM structures on YouTube and X can change without notice.
 - OpenAI usage requires user-provided API key and network access.
 - YouTube transcript behavior depends on transcript panel availability in current UI locale/layout.
-- Auto-merge requires running a local merge service and having ffmpeg installed on host.
+- Auto-merge/helper fallback requires running a local helper service with ffmpeg and yt-dlp installed on host.
