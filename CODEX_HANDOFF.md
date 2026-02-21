@@ -32,6 +32,7 @@
 - Added non-YouTube manifest fallback path using local `yt-dlp` via `tools/merge_server.py` endpoint `/download_manifest`.
 - Added generic page fallback path using local `yt-dlp` via `tools/merge_server.py` endpoint `/download_page`.
 - Added timestamped helper runtime logging in `tools/merge_server.py` for request start/attempt/success/failure diagnostics.
+- Improved popup-to-content messaging reliability by auto-injecting `content.js` and retrying when receiver is missing (`Receiving end does not exist`), improving behavior on fresh tabs/new installations (notably on Windows).
 - Fixed X reply generation parsing to support multiple OpenAI Responses output formats (`output_text` and `output[].content[].text`).
 - Added foundational documentation (`README.md`).
 

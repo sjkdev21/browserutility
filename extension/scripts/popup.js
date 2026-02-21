@@ -16,10 +16,28 @@ async function withActiveTab(handler) {
   return handler(tab);
 }
 
+async function sendMessageWithRecovery(tabId, payload) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, payload);
+  } catch (error) {
+    const message = error?.message || "";
+    if (!/Receiving end does not exist/i.test(message)) {
+      throw error;
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["scripts/content.js"]
+    });
+
+    return chrome.tabs.sendMessage(tabId, payload);
+  }
+}
+
 async function runAction(action) {
   try {
     setStatus("Working...");
-    const response = await withActiveTab((tab) => chrome.tabs.sendMessage(tab.id, { action }));
+    const response = await withActiveTab((tab) => sendMessageWithRecovery(tab.id, { action }));
 
     if (!response) {
       setStatus("No response from page. Reload and try again.", true);
