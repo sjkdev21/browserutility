@@ -9,6 +9,7 @@ Exposes:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -36,6 +37,22 @@ def safe_abs(path: str, base_dir: str) -> str:
 
 def run_cmd(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+
+def sanitize_title(raw: str, max_len: int = 90) -> str:
+    text = (raw or "video").strip()
+    text = "".join(ch if ch not in '<>:"/\\|?*' else " " for ch in text)
+    text = " ".join(text.split())
+    if not text:
+        text = "video"
+
+    if len(text) <= max_len:
+        return text
+
+    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+    keep = max_len - (len(digest) + 1)
+    trimmed = text[: max(keep, 16)].rstrip(" ._-")
+    return f"{trimmed}-{digest}"
 
 
 def log_event(message: str) -> None:
@@ -135,7 +152,7 @@ class MergeHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "error": "manifest_url is required"})
                 return
 
-            safe_title = "".join(ch if ch not in '<>:"/\\|?*' else " " for ch in title_hint).strip() or "stream-video"
+            safe_title = sanitize_title(title_hint or "stream-video")
             output_dir = payload.get("output_dir") or os.path.join(os.path.expanduser("~"), "Downloads", "BrowserUtility")
             os.makedirs(output_dir, exist_ok=True)
             output_template = os.path.join(output_dir, f"{safe_title}.%(ext)s")
@@ -192,7 +209,7 @@ class MergeHandler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"ok": False, "error": "page_url is required"})
                 return
 
-            safe_title = "".join(ch if ch not in '<>:"/\\|?*' else " " for ch in title_hint).strip() or "page-video"
+            safe_title = sanitize_title(title_hint or "page-video")
             output_dir = payload.get("output_dir") or os.path.join(os.path.expanduser("~"), "Downloads", "BrowserUtility")
             os.makedirs(output_dir, exist_ok=True)
             output_template = os.path.join(output_dir, f"{safe_title}.%(ext)s")
@@ -245,7 +262,7 @@ class MergeHandler(BaseHTTPRequestHandler):
             json_response(self, 400, {"ok": False, "error": "video_url is required"})
             return
 
-        safe_title = "".join(ch if ch not in '<>:"/\\|?*' else " " for ch in title_hint).strip() or "youtube-video"
+        safe_title = sanitize_title(title_hint or "youtube-video")
         output_dir = payload.get("output_dir") or os.path.join(os.path.expanduser("~"), "Downloads", "BrowserUtility")
         os.makedirs(output_dir, exist_ok=True)
         output_template = os.path.join(output_dir, f"{safe_title}.%(ext)s")
